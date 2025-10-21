@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from loguru import logger
 from apis.xhs_pc_apis import XHS_Apis
 from xhs_utils.common_util import init
@@ -42,24 +43,37 @@ class Data_Spider():
             raise ValueError('excel_name 不能为空')
         note_list = []
         all_comments = []
+        merged_items = []  # 用于最终合并为一个JSON：每条笔记 + 其评论
         want_comments = (save_choice == 'all') or ('comments' in save_choice) or (save_choice == 'excel')
         for note_url in notes:
             success, msg, note_info = self.spider_note(note_url, cookies_str, proxies)
             if note_info is not None and success:
                 note_list.append(note_info)
+                comments = []
                 if want_comments:
                     ok, cmsg, comments = self.spider_note_comments(note_url, cookies_str, proxies)
                     if ok and comments:
-                        # enrich with note meta path if downloading media
                         all_comments.extend(comments)
-                        # optionally dump per-note comments.json into its media folder
-                        if (save_choice == 'all') or ('media' in save_choice):
-                            save_dir = download_note(note_info, base_path['media'], 'media')
-                            try:
-                                with open(os.path.join(save_dir, 'comments.json'), 'w', encoding='utf-8') as f:
-                                    json.dump(comments, f, ensure_ascii=False, indent=2)
-                            except Exception as e:
-                                logger.warning(f'写入评论JSON失败: {e}')
+                # 如果需要下载媒体，优先下载并在此过程中写入视频统计信息
+                save_dir = None
+                if (save_choice == 'all') or ('media' in save_choice):
+                    save_dir = download_note(note_info, base_path['media'], 'media')
+                # 写入爬取时间
+                try:
+                    note_info['crawl_time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                except Exception:
+                    note_info['crawl_time'] = None
+                # 组装合并结构（每条笔记 + 评论），此时 note_info 可能已含视频统计
+                merged = dict(note_info)
+                merged['comments'] = comments
+                merged_items.append(merged)
+                # 每条笔记目录里也落地一个合并后的 JSON
+                if save_dir:
+                    try:
+                        with open(os.path.join(save_dir, 'info.json'), 'w', encoding='utf-8') as f:
+                            json.dump(merged, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        logger.warning(f'写入合并JSON失败: {e}')
         # download media for notes (if not already done above)
         for note_info in note_list:
             if save_choice == 'all' or 'media' in save_choice:
@@ -72,6 +86,15 @@ class Data_Spider():
         if want_comments and len(all_comments) > 0:
             cmt_path = os.path.abspath(os.path.join(base_path['excel'], f'{excel_name}_comments.xlsx'))
             save_to_xlsx(all_comments, cmt_path, type='comment')
+        # 额外输出：将笔记与评论合为一个 JSON 文件（包含视频长度字段）
+        try:
+            if len(merged_items) > 0:
+                merged_path = os.path.abspath(os.path.join(base_path['excel'], f'{excel_name}_merged.json')) if (save_choice == 'all' or save_choice == 'excel') and excel_name else os.path.abspath(os.path.join(base_path['excel'], 'merged.json'))
+                with open(merged_path, 'w', encoding='utf-8') as f:
+                    json.dump(merged_items, f, ensure_ascii=False, indent=2)
+                logger.info(f'合并JSON已保存至 {merged_path}')
+        except Exception as e:
+            logger.warning(f'保存合并JSON失败: {e}')
 
     def spider_note_comments(self, note_url: str, cookies_str: str, proxies=None):
         """
@@ -175,7 +198,7 @@ if __name__ == '__main__':
 
     # 1 爬取列表的所有笔记信息 笔记链接 如下所示 注意此url会过期！
     notes = [
-        r'https://www.xiaohongshu.com/explore/688315a00000000022033890?xsec_token=ABH2k5Gae_RVCkqfDnvDw77Nrl2VqEf3gezqAZTkaRjmY=&xsec_source=pc_like',
+        r'https://www.xiaohongshu.com/explore/6798ad61000000002803c01d?xsec_token=AB_aNx6JSRC-g08uyu36Kgoe5QgZJXfqNw4xMpMUqIYoQ=&xsec_source=pc_like',
     ]
     data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
 
@@ -197,4 +220,4 @@ if __name__ == '__main__':
     #     "latitude": 39.9725,
     #     "longitude": 116.4207
     # }
-    data_spider.spider_some_search_note(query, query_num, cookies_str, base_path, 'all', sort_type_choice, note_type, note_time, note_range, pos_distance, geo=None)
+    #data_spider.spider_some_search_note(query, query_num, cookies_str, base_path, 'all', sort_type_choice, note_type, note_time, note_range, pos_distance, geo=None)

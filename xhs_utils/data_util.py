@@ -4,6 +4,10 @@ import re
 import time
 import openpyxl
 import requests
+try:
+    import cv2
+except Exception:
+    cv2 = None
 from loguru import logger
 from retry import retry
 
@@ -91,13 +95,62 @@ def handle_note_info(data):
             # image_list.append(img_url)
         except:
             pass
+    # 尝试提取视频信息与时长
+    video_duration = None
     if note_type == '视频':
         video_cover = image_list[0]
         video_addr = 'https://sns-video-bd.xhscdn.com/' + data['note_card']['video']['consumer']['origin_video_key']
         # success, msg, video_addr = XHS_Apis.get_note_no_water_video(note_id)
+        try:
+            v = data['note_card'].get('video', {})
+            # 常见字段尝试
+            cand = (
+                v.get('duration')
+                or v.get('video_duration')
+                or (v.get('consumer') or {}).get('duration')
+                or (v.get('consumer') or {}).get('video_duration')
+                or (v.get('media') or {}).get('duration')
+                or (v.get('media') or {}).get('video_duration')
+                or (v.get('origin') or {}).get('duration')
+                or (v.get('origin') or {}).get('video_duration')
+                or (v.get('origin_video') or {}).get('duration')
+                or (v.get('origin_video') or {}).get('video_duration')
+            )
+            # 如果出现嵌套对象
+            if isinstance(cand, dict):
+                cand = cand.get('value')
+            # 统一转换为秒（尽力判断毫秒/秒）
+            if isinstance(cand, (int, float)):
+                video_duration = float(cand)
+                # 大于1小时(3600)很可能是毫秒，或大于600也高度可疑
+                if video_duration > 3600:
+                    video_duration = round(video_duration / 1000.0, 3)
+            # 兜底：从视频CDN响应头尝试读取 duration（如 Content-Duration / X-Content-Duration 等）
+            if video_duration is None and isinstance(video_addr, str):
+                try:
+                    resp = requests.head(video_addr, allow_redirects=True, timeout=5)
+                    if resp is not None:
+                        hdrs = {k.lower(): v for k, v in resp.headers.items()}
+                        for key in (
+                            'content-duration', 'x-content-duration', 'x-video-duration',
+                            'x-amz-meta-duration', 'x-original-duration'
+                        ): 
+                            if key in hdrs:
+                                try:
+                                    dur = float(hdrs[key])
+                                    # 一些头用毫秒
+                                    video_duration = dur / 1000.0 if dur > 3600 else dur
+                                    break
+                                except Exception:
+                                    pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
     else:
         video_cover = None
         video_addr = None
+        video_duration = None
     tags_temp = data['note_card']['tag_list']
     tags = []
     for tag in tags_temp:
@@ -126,6 +179,7 @@ def handle_note_info(data):
         'share_count': share_count,
         'video_cover': video_cover,
         'video_addr': video_addr,
+        'video_duration': video_duration,
         'image_list': image_list,
         'tags': tags,
         'upload_time': upload_time,
@@ -246,6 +300,41 @@ def save_note_detail(note, path):
 
 
 
+def _analyze_video_with_cv2(video_path: str):
+    stats = {
+        'fps': None,
+        'frame_count': None,
+        'width': None,
+        'height': None,
+        'duration': None,
+        'size_bytes': None,
+    }
+    if not cv2 or not os.path.exists(video_path):
+        return stats
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return stats
+        fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0
+        width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0.0
+        height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0.0
+        duration = None
+        if fps and fps > 0:
+            duration = float(frame_count) / float(fps)
+        stats.update({
+            'fps': float(fps) if fps else None,
+            'frame_count': int(frame_count) if frame_count else None,
+            'width': int(width) if width else None,
+            'height': int(height) if height else None,
+            'duration': round(duration, 3) if duration else None,
+            'size_bytes': os.path.getsize(video_path) if os.path.exists(video_path) else None,
+        })
+    except Exception as e:
+        logger.warning(f'OpenCV 分析视频失败: {e}')
+    return stats
+
+
 @retry(tries=3, delay=1)
 def download_note(note_info, path, save_choice):
     note_id = note_info['note_id']
@@ -258,16 +347,27 @@ def download_note(note_info, path, save_choice):
         title = f'无标题'
     save_path = f'{path}/{nickname}_{user_id}/{title}_{note_id}'
     check_and_create_path(save_path)
-    with open(f'{save_path}/info.json', mode='w', encoding='utf-8') as f:
-        f.write(json.dumps(note_info) + '\n')
     note_type = note_info['note_type']
-    save_note_detail(note_info, save_path)
     if note_type == '图集' and save_choice in ['media', 'media-image', 'all']:
         for img_index, img_url in enumerate(note_info['image_list']):
             download_media(save_path, f'image_{img_index}', img_url, 'image')
     elif note_type == '视频' and save_choice in ['media', 'media-video', 'all']:
         download_media(save_path, 'cover', note_info['video_cover'], 'image')
         download_media(save_path, 'video', note_info['video_addr'], 'video')
+        # 使用 OpenCV 计算视频基础信息
+        video_file = os.path.join(save_path, 'video.mp4')
+        stats = _analyze_video_with_cv2(video_file)
+        if stats:
+            note_info['video_fps'] = stats.get('fps')
+            note_info['video_frame_count'] = stats.get('frame_count')
+            note_info['video_width'] = stats.get('width')
+            note_info['video_height'] = stats.get('height')
+            note_info['video_size_bytes'] = stats.get('size_bytes')
+            # 使用检测到的时长覆盖/填充
+            if stats.get('duration'):
+                note_info['video_duration'] = stats.get('duration')
+    # 最后写出详情文本；不再单独写 info.json，合并版由上层生成
+    save_note_detail(note_info, save_path)
     return save_path
 
 

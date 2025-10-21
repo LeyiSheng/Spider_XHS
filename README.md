@@ -57,9 +57,6 @@
 ![image](https://github.com/cv-cat/Spider_XHS/assets/94289429/880884e8-4a1d-4dc1-a4dc-e168dd0e9896)
 ### 某个笔记具体的内容
 ![image](https://github.com/cv-cat/Spider_XHS/assets/94289429/d17f3f4e-cd44-4d3a-b9f6-d880da626cc8)
-### 保存的excel
-![image](https://github.com/user-attachments/assets/707f20ed-be27-4482-89b3-a5863bc360e7)
-
 ## 🛠️ 快速开始
 ### ⛳运行环境
 - Python 3.7+
@@ -87,47 +84,5 @@ python main.py
 - main.py中的代码是爬虫的入口，可以根据自己的需求进行修改
 - apis/xhs_pc_apis.py 中的代码包含了所有的api接口，可以根据自己的需求进行修改
 - apis/xhs_creator_apis.py 中的代码包含了小红书创作者平台的api接口，可以根据自己的需求进行修改
-
-
-## 🍥日志
-   
-| 日期       | 说明                                        |
-|----------|-------------------------------------------|
-| 23/08/09 | - 首次提交                                    |
-| 23/09/13 | - api更改params增加两个字段，修复图片无法下载，有些页面无法访问导致报错 |
-| 23/09/16 | - 较大视频出现编码问题，修复视频编码问题，加入异常处理              |
-| 23/09/18 | - 代码重构，加入失败重试                             |
-| 23/09/19 | - 新增下载搜索结果功能                              |
-| 23/10/05 | - 新增跳过已下载功能，获取更详细的笔记和用户信息                 |
-| 23/10/08 | - 上传代码☞Pypi，可通过pip install安装本项目           |
-| 23/10/17 | - 搜索下载新增排序方式选项（1、综合排序 2、热门排序 3、最新排序）      |
-| 23/10/21 | - 新增图形化界面,上传至release v2.1.0               |
-| 23/10/28 | - Fix Bug 修复搜索功能出现的隐藏问题                   |
-| 25/03/18 | - 更新API，修复部分问题                            |
-| 25/06/07 | - 更新search接口，区分视频和图集下载，增加小红书创作者api        |
-| 25/07/15 | - 更新 xs version56 & 小红书创作者接口              |
-
-
-## 🧸额外说明
-1. 感谢star⭐和follow📰！不时更新
-2. 作者的联系方式在主页里，有问题可以随时联系我
-3. 可以关注下作者的其他项目，欢迎 PR 和 issue
-4. 感谢赞助！如果此项目对您有帮助，请作者喝一杯奶茶~~ （开心一整天😊😊）
-5. thank you~~~
-
-<div align="center">
-  <img src="./author/wx_pay.png" width="400px" alt="微信赞赏码"> 
-  <img src="./author/zfb_pay.jpg" width="400px" alt="支付宝收款码">
-</div>
-
-
-## 📈 Star 趋势
-<a href="https://www.star-history.com/#cv-cat/Spider_XHS&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=cv-cat/Spider_XHS&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=cv-cat/Spider_XHS&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=cv-cat/Spider_XHS&type=Date" />
- </picture>
-</a>
 
 
