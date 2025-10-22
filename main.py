@@ -20,11 +20,13 @@ class Data_Spider():
         """
         note_info = None
         try:
-            success, msg, note_info = self.xhs_apis.get_note_info(note_url, cookies_str, proxies)
-            if success:
-                note_info = note_info['data']['items'][0]
+            success, msg, res_json = self.xhs_apis.get_note_info(note_url, cookies_str, proxies)
+            if success and res_json and 'data' in res_json and res_json['data'].get('items'):
+                note_info = res_json['data']['items'][0]
                 note_info['url'] = note_url
                 note_info = handle_note_info(note_info)
+            else:
+                raise Exception('接口返回为空或无items，可能缺少/失效xsec_token')
         except Exception as e:
             success = False
             msg = e
@@ -200,7 +202,7 @@ if __name__ == '__main__':
     notes = [
         r'https://www.xiaohongshu.com/explore/6798ad61000000002803c01d?xsec_token=AB_aNx6JSRC-g08uyu36Kgoe5QgZJXfqNw4xMpMUqIYoQ=&xsec_source=pc_like',
     ]
-    data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
+    #data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
 
     # 2 爬取用户的所有笔记信息 用户链接 如下所示 注意此url会过期！
     #user_url = 'https://www.xiaohongshu.com/user/profile/64f37b4a0000000004025d45?xsec_token=ABljtPmm-R8O36m_8QZSrR0ridjylPwLq9ZZoqPawdv7o%3D&xsec_source=pc_search'
@@ -221,3 +223,5 @@ if __name__ == '__main__':
     #     "longitude": 116.4207
     # }
     #data_spider.spider_some_search_note(query, query_num, cookies_str, base_path, 'all', sort_type_choice, note_type, note_time, note_range, pos_distance, geo=None)
+
+    # 已去除 Selenium 采集功能；如需采集 URL，可手动提供 notes 列表或使用搜索/用户API。
