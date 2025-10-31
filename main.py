@@ -200,9 +200,9 @@ if __name__ == '__main__':
 
     # 1 爬取列表的所有笔记信息 笔记链接 如下所示 注意此url会过期！
     notes = [
-        r'https://www.xiaohongshu.com/explore/6798ad61000000002803c01d?xsec_token=AB_aNx6JSRC-g08uyu36Kgoe5QgZJXfqNw4xMpMUqIYoQ=&xsec_source=pc_like',
+        r'https://www.xiaohongshu.com/explore/69007525000000000401553d?xsec_token=ABTk2gyVOWolL8_2zzH_2_7N5yiDBEKb5pn41EYDfhK9Y=&xsec_source=pc_feed',
     ]
-    #data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
+    data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
 
     # 2 爬取用户的所有笔记信息 用户链接 如下所示 注意此url会过期！
     #user_url = 'https://www.xiaohongshu.com/user/profile/64f37b4a0000000004025d45?xsec_token=ABljtPmm-R8O36m_8QZSrR0ridjylPwLq9ZZoqPawdv7o%3D&xsec_source=pc_search'
