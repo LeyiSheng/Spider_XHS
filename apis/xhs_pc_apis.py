@@ -650,7 +650,7 @@ class XHS_Apis():
             msg = str(e)
         return success, msg, res_json
 
-    def get_note_all_out_comment(self, note_id: str, xsec_token: str, cookies_str: str, proxies: dict = None):
+    def get_note_all_out_comment(self, note_id: str, xsec_token: str, cookies_str: str, proxies: dict = None, limit: int = None):
         """
             获取笔记的全部一级评论
             :param note_id 笔记的id
@@ -664,13 +664,26 @@ class XHS_Apis():
                 success, msg, res_json = self.get_note_out_comment(note_id, cursor, xsec_token, cookies_str, proxies)
                 if not success:
                     raise Exception(msg)
-                comments = res_json["data"]["comments"]
-                if 'cursor' in res_json["data"]:
-                    cursor = str(res_json["data"]["cursor"])
+                data = res_json.get("data") or {}
+                # 如果没有 comments 字段，视为无可见评论或响应异常，退出循环
+                if "comments" not in data:
+                    from loguru import logger as _logger
+                    _logger.warning(f"一级评论响应缺少 comments 字段，keys={list(data.keys())}")
+                    break
+                comments = data.get("comments") or []
+                cursor_val = data.get("cursor")
+                if cursor_val is not None:
+                    cursor = str(cursor_val)
                 else:
+                    # 无游标，结束
+                    note_out_comment_list.extend(comments)
                     break
                 note_out_comment_list.extend(comments)
-                if len(note_out_comment_list) == 0 or not res_json["data"]["has_more"]:
+                has_more = bool(data.get("has_more"))
+                # 软上限：达到上限则停止
+                if isinstance(limit, int) and limit > 0 and len(note_out_comment_list) >= limit:
+                    break
+                if len(comments) == 0 or not has_more:
                     break
         except Exception as e:
             success = False
@@ -716,7 +729,7 @@ class XHS_Apis():
             msg = str(e)
         return success, msg, res_json
 
-    def get_note_all_inner_comment(self, comment: dict, xsec_token: str, cookies_str: str, proxies: dict = None):
+    def get_note_all_inner_comment(self, comment: dict, xsec_token: str, cookies_str: str, proxies: dict = None, max_inner: int = None):
         """
             获取笔记的全部二级评论
             :param comment 笔记的一级评论
@@ -724,29 +737,42 @@ class XHS_Apis():
             返回笔记的全部二级评论
         """
         try:
-            if not comment['sub_comment_has_more']:
+            if not comment.get('sub_comment_has_more'):
                 return True, 'success', comment
-            cursor = comment['sub_comment_cursor']
+            cursor = comment.get('sub_comment_cursor', '')
             inner_comment_list = []
+            total_added = 0
             while True:
                 success, msg, res_json = self.get_note_inner_comment(comment, cursor, xsec_token, cookies_str, proxies)
                 if not success:
                     raise Exception(msg)
-                comments = res_json["data"]["comments"]
-                if 'cursor' in res_json["data"]:
-                    cursor = str(res_json["data"]["cursor"])
+                data = res_json.get("data") or {}
+                if "comments" not in data:
+                    from loguru import logger as _logger
+                    _logger.warning(f"二级评论响应缺少 comments 字段，keys={list(data.keys())}")
+                    break
+                comments = data.get("comments") or []
+                cursor_val = data.get("cursor")
+                if cursor_val is not None:
+                    cursor = str(cursor_val)
                 else:
+                    inner_comment_list.extend(comments)
+                    total_added += len(comments)
                     break
                 inner_comment_list.extend(comments)
-                if not res_json["data"]["has_more"]:
+                total_added += len(comments)
+                # 软上限：达到上限则停止
+                if isinstance(max_inner, int) and max_inner > 0 and total_added >= max_inner:
                     break
-            comment['sub_comments'].extend(inner_comment_list)
+                if not bool(data.get("has_more")):
+                    break
+            (comment.setdefault('sub_comments', [])).extend(inner_comment_list)
         except Exception as e:
             success = False
             msg = str(e)
         return success, msg, comment
 
-    def get_note_all_comment(self, url: str, cookies_str: str, proxies: dict = None):
+    def get_note_all_comment(self, url: str, cookies_str: str, proxies: dict = None, limit_total: int = 200):
         """
             获取一篇文章的所有评论
             :param note_id: 你想要获取的笔记的id
@@ -762,13 +788,25 @@ class XHS_Apis():
             xsec_token = token_list[0] if token_list else ''
             if not xsec_token:
                 raise Exception('缺少 xsec_token，请传入带 xsec_token 的笔记链接')
-            success, msg, out_comment_list = self.get_note_all_out_comment(note_id, xsec_token, cookies_str, proxies)
+            # 先抓一级评论，最多至总上限（粗略预算）
+            success, msg, out_comment_list = self.get_note_all_out_comment(note_id, xsec_token, cookies_str, proxies, limit=limit_total)
             if not success:
                 raise Exception(msg)
+            # 预算剩余用于二级评论
+            remain = max(int(limit_total) - len(out_comment_list), 0) if isinstance(limit_total, int) and limit_total else None
+            if remain is None:
+                remain = 0
             for comment in out_comment_list:
-                success, msg, new_comment = self.get_note_all_inner_comment(comment, xsec_token, cookies_str, proxies)
+                if remain <= 0:
+                    break
+                # 逐条补齐该一级评论的子评论，在剩余额度内
+                before = len(comment.get('sub_comments') or [])
+                success, msg, new_comment = self.get_note_all_inner_comment(comment, xsec_token, cookies_str, proxies, max_inner=remain)
                 if not success:
                     raise Exception(msg)
+                after = len(new_comment.get('sub_comments') or [])
+                added = max(after - before, 0)
+                remain = max(remain - added, 0)
         except Exception as e:
             success = False
             msg = str(e)

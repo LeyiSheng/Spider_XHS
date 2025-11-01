@@ -1,6 +1,11 @@
 import json
 import os
 import time
+import random
+from collections import deque, defaultdict
+
+# Adaptive limiter is defined before Data_Spider to avoid any nesting/indent confusion
+    
 from loguru import logger
 from apis.xhs_pc_apis import XHS_Apis
 from xhs_utils.common_util import init
@@ -10,6 +15,7 @@ from xhs_utils.data_util import handle_note_info, handle_comment_info, download_
 class Data_Spider():
     def __init__(self):
         self.xhs_apis = XHS_Apis()
+        self._limiter = AdaptiveLimiter()
 
     def spider_note(self, note_url: str, cookies_str: str, proxies=None):
         """
@@ -35,31 +41,44 @@ class Data_Spider():
 
     def spider_some_note(self, notes: list, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', proxies=None):
         """
-        爬取一些笔记的信息
-        :param notes:
-        :param cookies_str:
-        :param base_path:
-        :return:
+        爬取一些笔记的信息（详情队列 -> 评论队列，带自适应等待）
         """
         if (save_choice == 'all' or save_choice == 'excel') and excel_name == '':
             raise ValueError('excel_name 不能为空')
+        # 去重同一批中的重复 URL（保持顺序）
+        if notes:
+            notes = list(dict.fromkeys(notes))
         note_list = []
         all_comments = []
         merged_items = []  # 用于最终合并为一个JSON：每条笔记 + 其评论
         want_comments = (save_choice == 'all') or ('comments' in save_choice) or (save_choice == 'excel')
+
+        def _is_rate_limited(err_msg):
+            s = str(err_msg)
+            return any(k in s for k in ['频次', 'rate limit', 'Too Many', '429'])
+
+        # Phase 1: 详情队列
         for note_url in notes:
+            self._limiter.pre_sleep('detail')
             success, msg, note_info = self.spider_note(note_url, cookies_str, proxies)
+            rate_limit_hit = _is_rate_limited(msg) if not success else False
+            self._limiter.post_record('detail', success, rate_limit_hit)
             if note_info is not None and success:
                 note_list.append(note_info)
-                comments = []
-                if want_comments:
-                    ok, cmsg, comments = self.spider_note_comments(note_url, cookies_str, proxies)
-                    if ok and comments:
-                        all_comments.extend(comments)
-                    elif ok and not comments:
-                        print(f"该笔记无可用评论或未返回评论: {note_url}")
-                    else:
-                        print(f"评论获取失败: {note_url}，原因: {cmsg}")
+        # Phase 2: 评论队列（与详情解耦，支持自适应等待）
+        if want_comments and len(note_list) > 0:
+            for item in note_list:
+                note_url = item.get('note_url') or item.get('url')
+                self._limiter.pre_sleep('comment')
+                ok, cmsg, comments = self.spider_note_comments(note_url, cookies_str, proxies)
+                rate_limit_hit = (not ok) and _is_rate_limited(cmsg)
+                self._limiter.post_record('comment', ok, rate_limit_hit)
+                if ok and comments:
+                    all_comments.extend(comments)
+                elif ok and not comments:
+                    print(f"该笔记无可用评论或未返回评论: {note_url}")
+                else:
+                    print(f"评论获取失败: {note_url}，原因: {cmsg}")
                 # 如果需要下载媒体，优先下载并在此过程中写入视频统计信息
                 save_dir = None
                 if (save_choice == 'all') or ('media' in save_choice):
@@ -109,9 +128,6 @@ class Data_Spider():
     def spider_note_comments(self, note_url: str, cookies_str: str, proxies=None):
         """
         爬取一个笔记的全部评论（含一级与二级）并结构化返回
-        :param note_url: 笔记链接（携带 xsec_token/xsec_source）
-        :param cookies_str: Cookies
-        :return: (success, msg, comments_list)
         """
         try:
             success, msg, out_comments = self.xhs_apis.get_note_all_comment(note_url, cookies_str, proxies)
@@ -137,10 +153,6 @@ class Data_Spider():
     def spider_user_all_note(self, user_url: str, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', proxies=None):
         """
         爬取一个用户的所有笔记
-        :param user_url:
-        :param cookies_str:
-        :param base_path:
-        :return:
         """
         note_list = []
         try:
@@ -159,19 +171,9 @@ class Data_Spider():
         logger.info(f'爬取用户所有视频 {user_url}: {success}, msg: {msg}')
         return note_list, success, msg
 
-    def spider_some_search_note(self, query: str, require_num: int, cookies_str: str, base_path: dict, save_choice: str, sort_type_choice=0, note_type=0, note_time=0, note_range=0, pos_distance=0, geo: dict = None,  excel_name: str = '', proxies=None):
+    def spider_some_search_note(self, query: str, require_num: int, cookies_str: str, base_path: dict, save_choice: str, sort_type_choice=0, note_type=0, note_time=0, note_range=0, pos_distance=0, geo: dict = None,  excel_name: str = '', proxies=None, seen_note_ids: set = None):
         """
-            指定数量搜索笔记，设置排序方式和笔记类型和笔记数量
-            :param query 搜索的关键词
-            :param require_num 搜索的数量
-            :param cookies_str 你的cookies
-            :param base_path 保存路径
-            :param sort_type_choice 排序方式 0 综合排序, 1 最新, 2 最多点赞, 3 最多评论, 4 最多收藏
-            :param note_type 笔记类型 0 不限, 1 视频笔记, 2 普通笔记
-            :param note_time 笔记时间 0 不限, 1 一天内, 2 一周内天, 3 半年内
-            :param note_range 笔记范围 0 不限, 1 已看过, 2 未看过, 3 已关注
-            :param pos_distance 位置距离 0 不限, 1 同城, 2 附近 指定这个必须要指定 geo
-            返回搜索的结果
+        指定数量搜索笔记，设置排序方式和笔记类型和笔记数量
         """
         note_list = []
         try:
@@ -179,17 +181,95 @@ class Data_Spider():
             if success:
                 notes = list(filter(lambda x: x['model_type'] == "note", notes))
                 logger.info(f'搜索关键词 {query} 笔记数量: {len(notes)}')
+                # 去重：同一关键词返回中的重复ID
+                seen_ids_local = set()
+                filtered_urls = []
                 for note in notes:
-                    note_url = f"https://www.xiaohongshu.com/explore/{note['id']}?xsec_token={note['xsec_token']}"
-                    note_list.append(note_url)
+                    nid = note.get('id')
+                    if not nid or nid in seen_ids_local:
+                        continue
+                    seen_ids_local.add(nid)
+                    note_url = f"https://www.xiaohongshu.com/explore/{nid}?xsec_token={note['xsec_token']}"
+                    filtered_urls.append(note_url)
+                # 如果传入了跨批次去重集合，则进一步过滤
+                if seen_note_ids is not None:
+                    def _nid_from_url(u: str):
+                        try:
+                            return u.split('/explore/')[1].split('?')[0]
+                        except Exception:
+                            return None
+                    filtered_urls = [u for u in filtered_urls if (_nid_from_url(u) not in seen_note_ids)]
+                note_list = filtered_urls
             if save_choice == 'all' or save_choice == 'excel':
                 excel_name = query
             path = self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, proxies)
+            # 成功后将已处理的ID加入去重集合
+            if path is not None and seen_note_ids is not None:
+                for u in (note_list or []):
+                    try:
+                        nid = u.split('/explore/')[1].split('?')[0]
+                        if nid:
+                            seen_note_ids.add(nid)
+                    except Exception:
+                        pass
         except Exception as e:
             success = False
             msg = e
         logger.info(f'搜索关键词 {query} 笔记: {success}, msg: {msg}')
         return note_list, success, msg, path
+
+class AdaptiveLimiter:
+    """Simple adaptive rate limiter based on recent failure rate.
+    Maintains separate windows for 'detail' and 'comment'.
+    """
+    def __init__(self, window_size: int = 30):
+        self.window_size = window_size
+        self.recent = {
+            'detail': deque(maxlen=window_size),
+            'comment': deque(maxlen=window_size),
+        }
+        self.calls = defaultdict(int)
+        self.consec_fail = defaultdict(int)
+
+    def _failure_rate(self, kind: str) -> float:
+        q = self.recent.get(kind)
+        if not q or len(q) == 0:
+            return 0.0
+        fails = sum(1 for s in q if not s)
+        return fails / float(len(q))
+
+    def pre_sleep(self, kind: str):
+        """Sleep a small jitter, scaled by recent failure rate."""
+        self.calls[kind] += 1
+        base = (0.8, 1.8) if kind == 'detail' else (1.0, 2.2)
+        rate = self._failure_rate(kind)
+        factor = 1.0
+        if rate > 0.15:
+            factor = 2.0
+        if rate > 0.30:
+            factor = 4.0
+        wait = random.uniform(base[0] * factor, base[1] * factor)
+        time.sleep(wait)
+        # periodic cool-down when failure rate is high
+        if rate > 0.30 and (self.calls[kind] % 5 == 0):
+            cool = random.uniform(25, 55)
+            logger.warning(f"[{kind}] 高失败率 {rate:.0%}，冷却 {int(cool)}s ...")
+            time.sleep(cool)
+
+    def post_record(self, kind: str, success: bool, rate_limited: bool):
+        self.recent[kind].append(bool(success))
+        self.consec_fail[kind] = 0 if success else (self.consec_fail[kind] + 1)
+        # Backoff for rate limit events
+        if rate_limited:
+            cool = random.uniform(45, 90)
+            logger.warning(f"[{kind}] 命中频次限制，冷却 {int(cool)}s ...")
+            time.sleep(cool)
+        # Escalating backoff for consecutive failures (non-429)
+        elif not success and self.consec_fail[kind] >= 3:
+            cool = min(120, 15 * self.consec_fail[kind])
+            logger.warning(f"[{kind}] 连续失败 {self.consec_fail[kind]} 次，冷却 {int(cool)}s ...")
+            time.sleep(cool)
+
 
 if __name__ == '__main__':
     """
