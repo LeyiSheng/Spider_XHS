@@ -9,7 +9,11 @@ except:
 
 
 def generate_xs(a1, api, data=''):
-    ret = js.call('get_request_headers_params', api, data, a1)
+    method = 'GET' if (not data and ('?' in api)) else 'POST'
+    try:
+        ret = js.call('get_request_headers_params_with_method', method, api, data, a1)
+    except Exception:
+        ret = js.call('get_request_headers_params', api, data, a1)
     xs, xt = ret['xs'], ret['xt']
     if data:
         data = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
@@ -40,9 +44,14 @@ def get_common_headers():
 
 
 def splice_str(api, params):
-    url = api + '?'
-    for key, value in params.items():
-        if value is None:
-            value = ''
-        url += key + '=' + value + '&'
-    return url[:-1]
+    from urllib.parse import urlencode
+    safe_params = {}
+    for k, v in (params or {}).items():
+        if v is None:
+            v = ''
+        safe_params[k] = v
+    qs = urlencode(safe_params, doseq=True)
+    if not qs:
+        return api
+    joiner = '&' if ('?' in api) else '?'
+    return api + joiner + qs

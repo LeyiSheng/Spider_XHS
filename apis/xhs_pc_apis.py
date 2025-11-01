@@ -634,8 +634,17 @@ class XHS_Apis():
             splice_api = splice_str(api, params)
             headers, cookies, data = generate_request_params(cookies_str, splice_api)
             response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=proxies)
-            res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            try:
+                res_json = response.json()
+                success = res_json.get("success", True if "data" in res_json else False)
+                msg = res_json.get("msg") or res_json.get("message") or ""
+                if not success and not msg:
+                    import json as _json
+                    msg = f"resp: {(_json.dumps(res_json, ensure_ascii=False)[:200])}"
+            except Exception:
+                success = False
+                snippet = (response.text or "")[:200]
+                msg = f"HTTP {response.status_code}, non-JSON: {snippet}"
         except Exception as e:
             success = False
             msg = str(e)
@@ -691,8 +700,17 @@ class XHS_Apis():
             splice_api = splice_str(api, params)
             headers, cookies, data = generate_request_params(cookies_str, splice_api)
             response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=proxies)
-            res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            try:
+                res_json = response.json()
+                success = res_json.get("success", True if "data" in res_json else False)
+                msg = res_json.get("msg") or res_json.get("message") or ""
+                if not success and not msg:
+                    import json as _json
+                    msg = f"resp: {(_json.dumps(res_json, ensure_ascii=False)[:200])}"
+            except Exception:
+                success = False
+                snippet = (response.text or "")[:200]
+                msg = f"HTTP {response.status_code}, non-JSON: {snippet}"
         except Exception as e:
             success = False
             msg = str(e)
@@ -739,13 +757,16 @@ class XHS_Apis():
         try:
             urlParse = urllib.parse.urlparse(url)
             note_id = urlParse.path.split("/")[-1]
-            kvs = urlParse.query.split('&')
-            kvDist = {kv.split('=')[0]: kv.split('=')[1] for kv in kvs}
-            success, msg, out_comment_list = self.get_note_all_out_comment(note_id, kvDist['xsec_token'], cookies_str, proxies)
+            q = urllib.parse.parse_qs(urlParse.query or "")
+            token_list = q.get('xsec_token', [])
+            xsec_token = token_list[0] if token_list else ''
+            if not xsec_token:
+                raise Exception('缺少 xsec_token，请传入带 xsec_token 的笔记链接')
+            success, msg, out_comment_list = self.get_note_all_out_comment(note_id, xsec_token, cookies_str, proxies)
             if not success:
                 raise Exception(msg)
             for comment in out_comment_list:
-                success, msg, new_comment = self.get_note_all_inner_comment(comment, kvDist['xsec_token'], cookies_str, proxies)
+                success, msg, new_comment = self.get_note_all_inner_comment(comment, xsec_token, cookies_str, proxies)
                 if not success:
                     raise Exception(msg)
         except Exception as e:
@@ -1012,4 +1033,3 @@ if __name__ == '__main__':
     note_url = r'https://www.xiaohongshu.com/explore/67d7c713000000000900e391?xsec_token=AB1ACxbo5cevHxV_bWibTmK8R1DDz0NnAW1PbFZLABXtE=&xsec_source=pc_user'
     success, msg, note_all_comment = xhs_apis.get_note_all_comment(note_url, cookies_str)
     logger.info(f'获取笔记评论结果 {json.dumps(note_all_comment, ensure_ascii=False)}: {success}, msg: {msg}')
-

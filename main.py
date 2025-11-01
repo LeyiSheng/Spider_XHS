@@ -56,6 +56,10 @@ class Data_Spider():
                     ok, cmsg, comments = self.spider_note_comments(note_url, cookies_str, proxies)
                     if ok and comments:
                         all_comments.extend(comments)
+                    elif ok and not comments:
+                        print(f"该笔记无可用评论或未返回评论: {note_url}")
+                    else:
+                        print(f"评论获取失败: {note_url}，原因: {cmsg}")
                 # 如果需要下载媒体，优先下载并在此过程中写入视频统计信息
                 save_dir = None
                 if (save_choice == 'all') or ('media' in save_choice):
@@ -88,7 +92,10 @@ class Data_Spider():
         if want_comments and len(all_comments) > 0:
             cmt_path = os.path.abspath(os.path.join(base_path['excel'], f'{excel_name}_comments.xlsx'))
             save_to_xlsx(all_comments, cmt_path, type='comment')
-        # 额外输出：将笔记与评论合为一个 JSON 文件（包含视频长度字段）
+            print(f"共爬取评论 {len(all_comments)} 条，已导出至: {cmt_path}")
+        elif want_comments:
+            print("未获取到任何评论或接口返回为空。")
+        merged_path = None
         try:
             if len(merged_items) > 0:
                 merged_path = os.path.abspath(os.path.join(base_path['excel'], f'{excel_name}_merged.json')) if (save_choice == 'all' or save_choice == 'excel') and excel_name else os.path.abspath(os.path.join(base_path['excel'], 'merged.json'))
@@ -97,6 +104,7 @@ class Data_Spider():
                 logger.info(f'合并JSON已保存至 {merged_path}')
         except Exception as e:
             logger.warning(f'保存合并JSON失败: {e}')
+        return merged_path
 
     def spider_note_comments(self, note_url: str, cookies_str: str, proxies=None):
         """
@@ -120,10 +128,11 @@ class Data_Spider():
                     for sc in c['sub_comments']:
                         sc['note_url'] = note_url
                         flat.append(handle_comment_info(sc))
+            print(f'共爬取评论 {len(flat)} 条')
             return True, 'success', flat
         except Exception as e:
+            logger.warning(f'爬取笔记评论失败: {e}')
             return False, e, []
-
 
     def spider_user_all_note(self, user_url: str, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', proxies=None):
         """
@@ -175,12 +184,12 @@ class Data_Spider():
                     note_list.append(note_url)
             if save_choice == 'all' or save_choice == 'excel':
                 excel_name = query
-            self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, proxies)
+            path = self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, proxies)
         except Exception as e:
             success = False
             msg = e
         logger.info(f'搜索关键词 {query} 笔记: {success}, msg: {msg}')
-        return note_list, success, msg
+        return note_list, success, msg, path
 
 if __name__ == '__main__':
     """
@@ -200,10 +209,10 @@ if __name__ == '__main__':
 
     # 1 爬取列表的所有笔记信息 笔记链接 如下所示 注意此url会过期！
     notes = [
-        r'https://www.xiaohongshu.com/explore/69007525000000000401553d?xsec_token=ABTk2gyVOWolL8_2zzH_2_7N5yiDBEKb5pn41EYDfhK9Y=&xsec_source=pc_feed',
+        r'https://www.xiaohongshu.com/explore/690565df0000000003018c13?xsec_token=ABl7kbd59yUDXICiT6bhGWO2mGHVOV4KgXR7bkAgAmIPU=&xsec_source=pc_feed&source=404',
     ]
-    data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
-
+    path = data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
+    print(f'爬取完成，数据保存至: {path}')
     # 2 爬取用户的所有笔记信息 用户链接 如下所示 注意此url会过期！
     #user_url = 'https://www.xiaohongshu.com/user/profile/64f37b4a0000000004025d45?xsec_token=ABljtPmm-R8O36m_8QZSrR0ridjylPwLq9ZZoqPawdv7o%3D&xsec_source=pc_search'
     

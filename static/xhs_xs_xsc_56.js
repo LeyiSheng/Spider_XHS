@@ -271,10 +271,25 @@ function get_request_headers_params(api, data, a1) {
   };
 }
 
+// Variant that allows explicit HTTP method for signing
+function get_request_headers_params_with_method(method, api, data, a1) {
+  method = (method || 'POST').toUpperCase();
+  let xs_xt = signXs(method, api, a1, "xhs-pc-web", data);
+  let xs = xs_xt;
+  let xt = new Date().getTime();
+  let xs_common = XsCommon(a1, xs, xt);
+  return {
+    xs: xs,
+    xt: xt,
+    xs_common: xs_common,
+  };
+}
+
 
 if (typeof module !== "undefined") {
   module.exports = {
     signXs,
     get_request_headers_params,
+    get_request_headers_params_with_method,
   };
 }

@@ -21,7 +21,13 @@ def generate_x_b3_traceid(len=16):
     return x_b3_traceid
 
 def generate_xs_xs_common(a1, api, data=''):
-    ret = js.call('get_request_headers_params', api, data, a1)
+    # Infer method: if no body and api looks like GET with querystring, use GET; else POST
+    method = 'GET' if (not data and ('?' in api)) else 'POST'
+    # Prefer method-aware JS helper; fallback to original
+    try:
+        ret = js.call('get_request_headers_params_with_method', method, api, data, a1)
+    except Exception:
+        ret = js.call('get_request_headers_params', api, data, a1)
     xs, xt, xs_common = ret['xs'], ret['xt'], ret['xs_common']
     return xs, xt, xs_common
 
@@ -94,10 +100,17 @@ def generate_request_params(cookies_str, api, data=''):
     return headers, cookies, data
 
 def splice_str(api, params):
-    url = api + '?'
-    for key, value in params.items():
-        if value is None:
-            value = ''
-        url += key + '=' + value + '&'
-    return url[:-1]
-
+    """Safely build a querystring with URL-encoded values.
+    Supports list values via doseq.
+    """
+    from urllib.parse import urlencode
+    safe_params = {}
+    for k, v in (params or {}).items():
+        if v is None:
+            v = ''
+        safe_params[k] = v
+    qs = urlencode(safe_params, doseq=True)
+    if not qs:
+        return api
+    joiner = '&' if ('?' in api) else '?'
+    return api + joiner + qs
