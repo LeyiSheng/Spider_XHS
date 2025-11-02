@@ -13,6 +13,73 @@ from loguru import logger
 class XHS_Apis():
     def __init__(self):
         self.base_url = "https://edith.xiaohongshu.com"
+        self.web_base = "https://www.xiaohongshu.com"
+
+    def _extract_xsec_from_html(self, html: str) -> str:
+        """Best-effort extract xsec_token from HTML.
+        Tries query-like and JSON-like patterns.
+        """
+        try:
+            import re as _re
+            # direct query param occurrences
+            m = _re.search(r"xsec_token=([A-Za-z0-9_\-=%]+)", html)
+            if m:
+                return m.group(1)
+            # JSON style key
+            m = _re.search(r'"xsec_token"\s*:\s*"([^"]+)"', html)
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+        return ""
+
+    def refresh_note_url_token(self, note_url: str, cookies_str: str, proxies: dict = None) -> str:
+        """Try to fetch the note HTML and extract a fresh xsec_token.
+        Returns a URL with xsec_token appended/replaced if found; otherwise original.
+        """
+        try:
+            from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+            from xhs_utils.cookie_util import trans_cookies as _trans
+            from xhs_utils.xhs_util import get_common_headers as _get_hdr
+            parts = urlparse(note_url)
+            # Normalize to `/explore/<id>` URL on web domain
+            path = parts.path
+            if not path.startswith("/explore/"):
+                # attempt to coerce to explore form if note-id present at tail
+                nid = path.split("/")[-1]
+                path = f"/explore/{nid}"
+            target = urlunparse((
+                parts.scheme or "https",
+                parts.netloc or "www.xiaohongshu.com",
+                path,
+                "",
+                "",
+                "",
+            ))
+            # Fetch HTML with browser-like headers + cookies
+            headers = _get_hdr()
+            cookies = _trans(cookies_str)
+            import requests as _req
+            resp = _req.get(target, headers=headers, cookies=cookies, proxies=proxies, timeout=10)
+            html = resp.text or ""
+            token = self._extract_xsec_from_html(html)
+            if not token:
+                return note_url
+            # rebuild query
+            qs = parse_qs(parts.query or "")
+            qs['xsec_token'] = [token]
+            # preserve original xsec_source if present; else leave empty
+            new_query = urlencode({k: v[0] if isinstance(v, list) and v else v for k, v in qs.items()}, doseq=False)
+            return urlunparse((
+                parts.scheme or "https",
+                parts.netloc or "www.xiaohongshu.com",
+                path,
+                parts.params,
+                new_query,
+                parts.fragment,
+            ))
+        except Exception:
+            return note_url
 
     def get_homefeed_all_channel(self, cookies_str: str, proxies: dict = None):
         """
@@ -781,35 +848,46 @@ class XHS_Apis():
         """
         out_comment_list = []
         try:
-            urlParse = urllib.parse.urlparse(url)
-            note_id = urlParse.path.split("/")[-1]
-            q = urllib.parse.parse_qs(urlParse.query or "")
-            token_list = q.get('xsec_token', [])
-            xsec_token = token_list[0] if token_list else ''
-            if not xsec_token:
-                raise Exception('缺少 xsec_token，请传入带 xsec_token 的笔记链接')
-            # 先抓一级评论，最多至总上限（粗略预算）
-            success, msg, out_comment_list = self.get_note_all_out_comment(note_id, xsec_token, cookies_str, proxies, limit=limit_total)
-            if not success:
-                raise Exception(msg)
-            # 预算剩余用于二级评论
-            remain = max(int(limit_total) - len(out_comment_list), 0) if isinstance(limit_total, int) and limit_total else None
-            if remain is None:
-                remain = 0
-            for comment in out_comment_list:
-                if remain <= 0:
-                    break
-                # 逐条补齐该一级评论的子评论，在剩余额度内
-                before = len(comment.get('sub_comments') or [])
-                success, msg, new_comment = self.get_note_all_inner_comment(comment, xsec_token, cookies_str, proxies, max_inner=remain)
-                if not success:
-                    raise Exception(msg)
-                after = len(new_comment.get('sub_comments') or [])
-                added = max(after - before, 0)
-                remain = max(remain - added, 0)
+            def _do_once(note_url: str):
+                _urlParse = urllib.parse.urlparse(note_url)
+                _note_id = _urlParse.path.split("/")[-1]
+                _q = urllib.parse.parse_qs(_urlParse.query or "")
+                _token_list = _q.get('xsec_token', [])
+                _xsec_token = _token_list[0] if _token_list else ''
+                if not _xsec_token:
+                    raise Exception('缺少 xsec_token，请传入带 xsec_token 的笔记链接')
+                _success, _msg, _out = self.get_note_all_out_comment(_note_id, _xsec_token, cookies_str, proxies, limit=limit_total)
+                if not _success:
+                    raise Exception(_msg)
+                # 预算剩余用于二级评论
+                _remain = max(int(limit_total) - len(_out), 0) if isinstance(limit_total, int) and limit_total else None
+                if _remain is None:
+                    _remain = 0
+                for _c in _out:
+                    if _remain <= 0:
+                        break
+                    _before = len(_c.get('sub_comments') or [])
+                    _success, _msg, _new = self.get_note_all_inner_comment(_c, _xsec_token, cookies_str, proxies, max_inner=_remain)
+                    if not _success:
+                        raise Exception(_msg)
+                    _after = len(_new.get('sub_comments') or [])
+                    _added = max(_after - _before, 0)
+                    _remain = max(_remain - _added, 0)
+                return True, 'success', _out
+
+            # First attempt with given URL
+            success, msg, out_comment_list = _do_once(url)
         except Exception as e:
-            success = False
-            msg = str(e)
+            # Possible token issues or transient failures — try a one-time token refresh fallback
+            try:
+                refreshed = self.refresh_note_url_token(url, cookies_str, proxies)
+                if refreshed and refreshed != url:
+                    success, msg, out_comment_list = _do_once(refreshed)
+                else:
+                    raise Exception(str(e))
+            except Exception as e2:
+                success = False
+                msg = str(e2)
         return success, msg, out_comment_list
 
     def get_unread_message(self, cookies_str: str, proxies: dict = None):

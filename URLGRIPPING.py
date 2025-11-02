@@ -15,6 +15,11 @@ if __name__ == '__main__':
 
     cookies_str, base_path = init()
     data_spider = Data_Spider()
+    # 运行模式：
+    #   crawl         仅爬取帖子详情，不抓评论，生成合并JSON（comments=[]），并记录到待补齐列表
+    #   fill_comments 从上次生成的合并JSON（列表文件）中读取并补齐所有评论，写回原JSON
+    RUN_MODE = os.environ.get('XHS_RUN_MODE', 'fill_comments').strip().lower()
+    pending_list_path = os.path.join(base_path['excel'], 'pending_comments.json')
     
     # 3 搜索指定关键词的笔记
     query = [
@@ -41,33 +46,75 @@ if __name__ == '__main__':
                     seen.update(prev)
     except Exception as e:
         print(f"读取历史去重列表失败: {e}")
-    #for i in range(len(query)):
-    for i in range(5, 8, 1):
-        note_urls, success, msg, merged_path = data_spider.spider_some_search_note(
-            query[i], query_num, cookies_str, base_path, 'all',
-            sort_type_choice, note_type, note_time, note_range, pos_distance, geo=None, seen_note_ids=seen
-        )        # 节流：每轮关键词间随机等待
-        time.sleep(random.uniform(3.0, 6.0))
-        # 每处理若干关键词做一次长休眠
-        if (i + 1) % 5 == 0:
-            cool = random.uniform(40, 80)
-            print(f"批量节流：休眠 {int(cool)}s 以降低频次风险 ...")
-            time.sleep(cool)
-        # 从本次合并JSON提取 tags 并累加到 new_query
+    if RUN_MODE == 'crawl':
+        #for i in range(len(query)):
+        for i in range(5, 8, 1):
+            note_urls, success, msg, merged_path = data_spider.spider_some_search_note(
+                query[i], query_num, cookies_str, base_path, 'all',
+                sort_type_choice, note_type, note_time, note_range, pos_distance, geo=None, seen_note_ids=seen, fetch_comments=False
+            )
+            # 节流：每轮关键词间随机等待
+            time.sleep(random.uniform(3.0, 6.0))
+            # 每处理若干关键词做一次长休眠
+            if (i + 1) % 5 == 0:
+                cool = random.uniform(40, 80)
+                print(f"批量节流：休眠 {int(cool)}s 以降低频次风险 ...")
+                time.sleep(cool)
+            # 从本次合并JSON提取 tags 并累加到 new_query
+            try:
+                if isinstance(merged_path, str) and os.path.exists(merged_path):
+                    # 记录到待补齐列表
+                    try:
+                        if os.path.exists(pending_list_path):
+                            with open(pending_list_path, 'r', encoding='utf-8') as f:
+                                pendings = json.load(f) or []
+                        else:
+                            pendings = []
+                        if merged_path not in pendings:
+                            pendings.append(merged_path)
+                            with open(pending_list_path, 'w', encoding='utf-8') as f:
+                                json.dump(pendings, f, ensure_ascii=False, indent=2)
+                            print(f"已加入待补齐评论队列: {merged_path}")
+                    except Exception as e:
+                        print(f"更新待补齐列表失败: {e}")
+                    with open(merged_path, 'r', encoding='utf-8') as f:
+                        items = json.load(f)
+                    for it in (items or []):
+                        for tg in (it.get('tags') or []):
+                            if tg and tg not in seen:
+                                seen.add(tg)
+                                new_query.append(tg)
+                else:
+                    # 兼容：如果未返回合并路径，可忽略本轮
+                    pass
+            except Exception as e:
+                print(f"解析标签失败: {e}")
+    elif RUN_MODE == 'fill_comments':
+        # 读取待补齐列表，逐个补齐评论
         try:
-            if isinstance(merged_path, str) and os.path.exists(merged_path):
-                with open(merged_path, 'r', encoding='utf-8') as f:
-                    items = json.load(f)
-                for it in (items or []):
-                    for tg in (it.get('tags') or []):
-                        if tg and tg not in seen:
-                            seen.add(tg)
-                            new_query.append(tg)
+            if os.path.exists(pending_list_path):
+                with open(pending_list_path, 'r', encoding='utf-8') as f:
+                    pendings = json.load(f) or []
             else:
-                # 兼容：如果未返回合并路径，可忽略本轮
-                pass
+                pendings = []
         except Exception as e:
-            print(f"解析标签失败: {e}")
+            print(f"读取待补齐列表失败: {e}")
+            pendings = []
+        if not pendings:
+            print("待补齐评论列表为空，无需执行。")
+        else:
+            for p in list(pendings):
+                ok, msg, cnt = data_spider.fill_comments_for_merged_json(p, cookies_str)
+                print(f"更新 {p}: {ok}, {msg}")
+                # 轻微等待避免频次
+                time.sleep(random.uniform(2.0, 4.0))
+            # 清空队列（简单策略：全部尝试后清空）
+            try:
+                with open(pending_list_path, 'w', encoding='utf-8') as f:
+                    json.dump([], f, ensure_ascii=False, indent=2)
+                print(f"已清空待补齐列表: {pending_list_path}")
+            except Exception as e:
+                print(f"清空待补齐列表失败: {e}")
     # 可选：将 new_query 落地，便于后续复用
     try:
         out_path = os.path.join(base_path['excel'], 'new_query.json')

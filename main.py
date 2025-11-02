@@ -39,7 +39,7 @@ class Data_Spider():
         logger.info(f'爬取笔记信息 {note_url}: {success}, msg: {msg}')
         return success, msg, note_info
 
-    def spider_some_note(self, notes: list, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', proxies=None):
+    def spider_some_note(self, notes: list, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', proxies=None, fetch_comments: bool = True):
         """
         爬取一些笔记的信息（详情队列 -> 评论队列，带自适应等待）
         """
@@ -51,7 +51,8 @@ class Data_Spider():
         note_list = []
         all_comments = []
         merged_items = []  # 用于最终合并为一个JSON：每条笔记 + 其评论
-        want_comments = (save_choice == 'all') or ('comments' in save_choice) or (save_choice == 'excel')
+        # 仅当 fetch_comments=True 且保存选项需要评论时才爬取评论
+        want_comments = fetch_comments and ((save_choice == 'all') or ('comments' in save_choice) or (save_choice == 'excel'))
 
         def _is_rate_limited(err_msg):
             s = str(err_msg)
@@ -99,6 +100,16 @@ class Data_Spider():
                             json.dump(merged, f, ensure_ascii=False, indent=2)
                     except Exception as e:
                         logger.warning(f'写入合并JSON失败: {e}')
+        # 未抓取评论时，仍然生成合并条目（comments 为空列表），以便下次运行补齐
+        if not want_comments and len(note_list) > 0:
+            for note_info in note_list:
+                try:
+                    note_info['crawl_time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                except Exception:
+                    note_info['crawl_time'] = None
+                merged = dict(note_info)
+                merged['comments'] = []
+                merged_items.append(merged)
         # download media for notes (if not already done above)
         for note_info in note_list:
             if save_choice == 'all' or 'media' in save_choice:
@@ -171,7 +182,7 @@ class Data_Spider():
         logger.info(f'爬取用户所有视频 {user_url}: {success}, msg: {msg}')
         return note_list, success, msg
 
-    def spider_some_search_note(self, query: str, require_num: int, cookies_str: str, base_path: dict, save_choice: str, sort_type_choice=0, note_type=0, note_time=0, note_range=0, pos_distance=0, geo: dict = None,  excel_name: str = '', proxies=None, seen_note_ids: set = None):
+    def spider_some_search_note(self, query: str, require_num: int, cookies_str: str, base_path: dict, save_choice: str, sort_type_choice=0, note_type=0, note_time=0, note_range=0, pos_distance=0, geo: dict = None,  excel_name: str = '', proxies=None, seen_note_ids: set = None, fetch_comments: bool = True):
         """
         指定数量搜索笔记，设置排序方式和笔记类型和笔记数量
         """
@@ -202,7 +213,7 @@ class Data_Spider():
                 note_list = filtered_urls
             if save_choice == 'all' or save_choice == 'excel':
                 excel_name = query
-            path = self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, proxies)
+            path = self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, proxies, fetch_comments=fetch_comments)
             # 成功后将已处理的ID加入去重集合
             if path is not None and seen_note_ids is not None:
                 for u in (note_list or []):
@@ -217,6 +228,44 @@ class Data_Spider():
             msg = e
         logger.info(f'搜索关键词 {query} 笔记: {success}, msg: {msg}')
         return note_list, success, msg, path
+
+    def fill_comments_for_merged_json(self, merged_json_path: str, cookies_str: str, proxies=None):
+        """
+        读取上次生成的合并JSON（仅含笔记或无评论），为每条笔记补齐评论并写回同一文件。
+        返回（success, msg, count）
+        """
+        try:
+            if not merged_json_path or (not os.path.exists(merged_json_path)):
+                return False, f'文件不存在: {merged_json_path}', 0
+            with open(merged_json_path, 'r', encoding='utf-8') as f:
+                items = json.load(f)
+            if not isinstance(items, list):
+                return False, 'JSON结构异常，期望为列表', 0
+            updated = 0
+            total_comments = 0
+            for it in items:
+                note_url = it.get('note_url') or it.get('url')
+                if not note_url:
+                    continue
+                # 若已有评论且非空，可跳过；也可强制刷新，此处选择只在为空或不存在时补齐
+                comments_exist = it.get('comments')
+                if comments_exist:
+                    continue
+                self._limiter.pre_sleep('comment')
+                ok, msg, comments = self.spider_note_comments(note_url, cookies_str, proxies)
+                self._limiter.post_record('comment', ok, (not ok and ('429' in str(msg) or '频次' in str(msg))))
+                if ok:
+                    it['comments'] = comments
+                    updated += 1
+                    total_comments += len(comments or [])
+                else:
+                    logger.warning(f'补齐评论失败: {note_url}，原因: {msg}')
+            with open(merged_json_path, 'w', encoding='utf-8') as f:
+                json.dump(items, f, ensure_ascii=False, indent=2)
+            return True, f'已更新 {updated} 条笔记的评论，累计 {total_comments} 条评论', updated
+        except Exception as e:
+            logger.warning(f'填充评论至合并JSON失败: {e}')
+            return False, e, 0
 
 class AdaptiveLimiter:
     """Simple adaptive rate limiter based on recent failure rate.
