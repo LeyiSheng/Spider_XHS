@@ -230,20 +230,15 @@ def handle_comment_info(data):
         'pictures': pictures,
     }
 def save_to_xlsx(datas, file_path, type='note'):
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    if type == 'note':
-        headers = ['笔记id', '笔记url', '笔记类型', '用户id', '用户主页url', '昵称', '头像url', '标题', '描述', '点赞数量', '收藏数量', '评论数量', '分享数量', '视频封面url', '视频地址url', '图片地址url列表', '标签', '上传时间', 'ip归属地']
-    elif type == 'user':
-        headers = ['用户id', '用户主页url', '用户名', '头像url', '小红书号', '性别', 'ip地址', '介绍', '关注数量', '粉丝数量', '作品被赞和收藏数量', '标签']
-    else:
-        headers = ['笔记id', '笔记url', '评论id', '用户id', '用户主页url', '昵称', '头像url', '评论内容', '评论标签', '点赞数量', '上传时间', 'ip归属地', '图片地址url列表']
-    ws.append(headers)
-    for data in datas:
-        data = {k: norm_text(str(v)) for k, v in data.items()}
-        ws.append(list(data.values()))
-    wb.save(file_path)
-    logger.info(f'数据保存至 {file_path}')
+    """No-op to disable xlsx generation while preserving callers.
+
+    Keeps the rest of the pipeline unchanged but skips writing any Excel files.
+    """
+    try:
+        fname = os.path.basename(file_path)
+    except Exception:
+        fname = str(file_path)
+    logger.info(f'已禁用 xlsx 导出，跳过写入: {fname}')
 
 def download_media(path, name, url, type):
     if type == 'image':

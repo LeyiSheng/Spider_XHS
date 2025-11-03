@@ -121,8 +121,9 @@ class Data_Spider():
         # save comment excel when requested
         if want_comments and len(all_comments) > 0:
             cmt_path = os.path.abspath(os.path.join(base_path['excel'], f'{excel_name}_comments.xlsx'))
+            # save_to_xlsx is a no-op to avoid generating xlsx files
             save_to_xlsx(all_comments, cmt_path, type='comment')
-            print(f"共爬取评论 {len(all_comments)} 条，已导出至: {cmt_path}")
+            print(f"共爬取评论 {len(all_comments)} 条（已跳过 xlsx 导出）")
         elif want_comments:
             print("未获取到任何评论或接口返回为空。")
         merged_path = None
