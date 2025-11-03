@@ -188,6 +188,9 @@ class Data_Spider():
         指定数量搜索笔记，设置排序方式和笔记类型和笔记数量
         """
         note_list = []
+        path = None
+        success = False
+        msg = ''
         try:
             success, msg, notes = self.xhs_apis.search_some_note(query, require_num, cookies_str, sort_type_choice, note_type, note_time, note_range, pos_distance, geo, proxies)
             if success:
