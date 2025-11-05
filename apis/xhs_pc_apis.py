@@ -3,6 +3,8 @@ import json
 import re
 import urllib
 import requests
+import time
+import random
 from xhs_utils.xhs_util import splice_str, generate_request_params, generate_x_b3_traceid, get_common_headers
 from loguru import logger
 
@@ -730,6 +732,12 @@ class XHS_Apis():
             while True:
                 success, msg, res_json = self.get_note_out_comment(note_id, cursor, xsec_token, cookies_str, proxies)
                 if not success:
+                    # 命中频次限制时，冷却后重试本页
+                    _s = str(msg)
+                    if any(k in _s for k in ['频次', 'Too Many', '429']):
+                        logger.warning('一级评论命中频次限制，冷却一会儿再试...')
+                        time.sleep(random.uniform(45, 90))
+                        continue
                     raise Exception(msg)
                 data = res_json.get("data") or {}
                 # 如果没有 comments 字段，视为无可见评论或响应异常，退出循环
@@ -752,6 +760,8 @@ class XHS_Apis():
                     break
                 if len(comments) == 0 or not has_more:
                     break
+                # 放慢翻页速度，降低被限频风险
+                time.sleep(random.uniform(1.8, 3.4))
         except Exception as e:
             success = False
             msg = str(e)
@@ -812,6 +822,12 @@ class XHS_Apis():
             while True:
                 success, msg, res_json = self.get_note_inner_comment(comment, cursor, xsec_token, cookies_str, proxies)
                 if not success:
+                    # 命中频次限制时，冷却后重试本页
+                    _s = str(msg)
+                    if any(k in _s for k in ['频次', 'Too Many', '429']):
+                        logger.warning('二级评论命中频次限制，冷却一会儿再试...')
+                        time.sleep(random.uniform(45, 90))
+                        continue
                     raise Exception(msg)
                 data = res_json.get("data") or {}
                 if "comments" not in data:
@@ -833,6 +849,8 @@ class XHS_Apis():
                     break
                 if not bool(data.get("has_more")):
                     break
+                # 放慢翻页速度
+                time.sleep(random.uniform(1.2, 2.6))
             (comment.setdefault('sub_comments', [])).extend(inner_comment_list)
         except Exception as e:
             success = False
