@@ -3,6 +3,8 @@ import json
 import re
 import urllib
 import requests
+import time
+import random
 from xhs_utils.xhs_util import splice_str, generate_request_params, generate_x_b3_traceid, get_common_headers
 from loguru import logger
 
@@ -641,7 +643,7 @@ class XHS_Apis():
             msg = str(e)
         return success, msg, res_json
 
-    def get_note_all_out_comment(self, note_id: str, xsec_token: str, cookies_str: str, proxies: dict = None):
+    def get_note_all_out_comment(self, note_id: str, xsec_token: str, cookies_str: str, proxies: dict = None, limit_total: int = None):
         """
             获取笔记的全部一级评论
             :param note_id 笔记的id
@@ -651,9 +653,23 @@ class XHS_Apis():
         cursor = ''
         note_out_comment_list = []
         try:
+            def _is_rate_limited(err_msg: str) -> bool:
+                s = str(err_msg)
+                keywords = [
+                    '频次', '频繁', '访问过于频繁', '请求过于频繁',
+                    'rate limit', 'Too Many', '429',
+                    '风险控制', '访问受限', 'forbidden', 'Forbidden'
+                ]
+                return any(k in s for k in keywords)
+
             while True:
                 success, msg, res_json = self.get_note_out_comment(note_id, cursor, xsec_token, cookies_str, proxies)
                 if not success:
+                    # 命中频次限制或风控时，冷却后重试本页
+                    if _is_rate_limited(msg):
+                        logger.warning('一级评论命中频次限制/风控，冷却一会儿再试...')
+                        time.sleep(random.uniform(45, 90))
+                        continue
                     raise Exception(msg)
                 comments = res_json["data"]["comments"]
                 if 'cursor' in res_json["data"]:
@@ -661,6 +677,9 @@ class XHS_Apis():
                 else:
                     break
                 note_out_comment_list.extend(comments)
+                if limit_total and len(note_out_comment_list) >= limit_total:
+                    note_out_comment_list = note_out_comment_list[:limit_total]
+                    break
                 if len(note_out_comment_list) == 0 or not res_json["data"]["has_more"]:
                     break
         except Exception as e:
@@ -708,11 +727,26 @@ class XHS_Apis():
         try:
             if not comment['sub_comment_has_more']:
                 return True, 'success', comment
+
+            def _is_rate_limited(err_msg: str) -> bool:
+                s = str(err_msg)
+                keywords = [
+                    '频次', '频繁', '访问过于频繁', '请求过于频繁',
+                    'rate limit', 'Too Many', '429',
+                    '风险控制', '访问受限', 'forbidden', 'Forbidden'
+                ]
+                return any(k in s for k in keywords)
+
             cursor = comment['sub_comment_cursor']
             inner_comment_list = []
             while True:
                 success, msg, res_json = self.get_note_inner_comment(comment, cursor, xsec_token, cookies_str, proxies)
                 if not success:
+                    # 命中频次限制/风控时，冷却后重试本页
+                    if _is_rate_limited(msg):
+                        logger.warning('二级评论命中频次限制/风控，冷却一会儿再试...')
+                        time.sleep(random.uniform(45, 90))
+                        continue
                     raise Exception(msg)
                 comments = res_json["data"]["comments"]
                 if 'cursor' in res_json["data"]:
@@ -728,11 +762,12 @@ class XHS_Apis():
             msg = str(e)
         return success, msg, comment
 
-    def get_note_all_comment(self, url: str, cookies_str: str, proxies: dict = None):
+    def get_note_all_comment(self, url: str, cookies_str: str, proxies: dict = None, limit_total: int = None):
         """
             获取一篇文章的所有评论
             :param note_id: 你想要获取的笔记的id
             :param cookies_str: 你的cookies
+            :param limit_total: 限制抓取的评论总数（一级评论），为空则不限制
             返回一篇文章的所有评论
         """
         out_comment_list = []
@@ -741,7 +776,13 @@ class XHS_Apis():
             note_id = urlParse.path.split("/")[-1]
             kvs = urlParse.query.split('&')
             kvDist = {kv.split('=')[0]: kv.split('=')[1] for kv in kvs}
-            success, msg, out_comment_list = self.get_note_all_out_comment(note_id, kvDist['xsec_token'], cookies_str, proxies)
+            success, msg, out_comment_list = self.get_note_all_out_comment(
+                note_id,
+                kvDist['xsec_token'],
+                cookies_str,
+                proxies,
+                limit_total=limit_total
+            )
             if not success:
                 raise Exception(msg)
             for comment in out_comment_list:
@@ -1012,7 +1053,6 @@ if __name__ == '__main__':
     note_url = r'https://www.xiaohongshu.com/explore/67d7c713000000000900e391?xsec_token=AB1ACxbo5cevHxV_bWibTmK8R1DDz0NnAW1PbFZLABXtE=&xsec_source=pc_user'
     success, msg, note_all_comment = xhs_apis.get_note_all_comment(note_url, cookies_str)
     logger.info(f'获取笔记评论结果 {json.dumps(note_all_comment, ensure_ascii=False)}: {success}, msg: {msg}')
-
 
 
 
