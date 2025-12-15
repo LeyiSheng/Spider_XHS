@@ -2,7 +2,6 @@ import json
 import os
 import re
 import time
-import openpyxl
 import requests
 from loguru import logger
 from retry import retry
@@ -22,6 +21,27 @@ def timestamp_to_str(timestamp):
     time_local = time.localtime(timestamp / 1000)
     dt = time.strftime("%Y-%m-%d %H:%M:%S", time_local)
     return dt
+
+def extract_video_duration(video_info):
+    """Best-effort duration extractor; some返回结构不同."""
+    def _search(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if v is None:
+                    continue
+                key_lower = str(k).lower()
+                if 'duration' in key_lower and isinstance(v, (int, float)):
+                    return v / 1000 if key_lower.endswith('ms') else v
+                found = _search(v)
+                if found:
+                    return found
+        elif isinstance(obj, list):
+            for item in obj:
+                found = _search(item)
+                if found:
+                    return found
+        return None
+    return _search(video_info)
 
 def handle_user_info(data, user_id):
     home_url = f'https://www.xiaohongshu.com/user/profile/{user_id}'
@@ -82,22 +102,27 @@ def handle_note_info(data):
     collected_count = data['note_card']['interact_info']['collected_count']
     comment_count = data['note_card']['interact_info']['comment_count']
     share_count = data['note_card']['interact_info']['share_count']
-    image_list_temp = data['note_card']['image_list']
-    image_list = []
-    for image in image_list_temp:
-        try:
-            image_list.append(image['info_list'][1]['url'])
-            # success, msg, img_url = XHS_Apis.get_note_no_water_img(image['info_list'][1]['url'])
-            # image_list.append(img_url)
-        except:
-            pass
     if note_type == '视频':
-        video_cover = image_list[0]
         video_addr = 'https://sns-video-bd.xhscdn.com/' + data['note_card']['video']['consumer']['origin_video_key']
+        # 优先直接返回视频时长，封面不需要
+        video_info = data['note_card'].get('video', {})
+        video_duration = video_info.get('duration')
+        if video_duration is None:
+            video_duration = video_info.get('media', {}).get('duration')
+        if video_duration is None:
+            video_duration = extract_video_duration(video_info) or extract_video_duration(data.get('video', {}))
         # success, msg, video_addr = XHS_Apis.get_note_no_water_video(note_id)
+        image_list = []  # 不保存视频封面图
     else:
-        video_cover = None
         video_addr = None
+        video_duration = None
+        image_list_temp = data['note_card']['image_list']
+        image_list = []
+        for image in image_list_temp:
+            try:
+                image_list.append(image['info_list'][1]['url'])
+            except:
+                pass
     tags_temp = data['note_card']['tag_list']
     tags = []
     for tag in tags_temp:
@@ -124,8 +149,8 @@ def handle_note_info(data):
         'collected_count': collected_count,
         'comment_count': comment_count,
         'share_count': share_count,
-        'video_cover': video_cover,
         'video_addr': video_addr,
+        'video_duration': video_duration,
         'image_list': image_list,
         'tags': tags,
         'upload_time': upload_time,
@@ -176,20 +201,11 @@ def handle_comment_info(data):
         'pictures': pictures,
     }
 def save_to_xlsx(datas, file_path, type='note'):
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    if type == 'note':
-        headers = ['笔记id', '笔记url', '笔记类型', '用户id', '用户主页url', '昵称', '头像url', '标题', '描述', '点赞数量', '收藏数量', '评论数量', '分享数量', '视频封面url', '视频地址url', '图片地址url列表', '标签', '上传时间', 'ip归属地']
-    elif type == 'user':
-        headers = ['用户id', '用户主页url', '用户名', '头像url', '小红书号', '性别', 'ip地址', '介绍', '关注数量', '粉丝数量', '作品被赞和收藏数量', '标签']
-    else:
-        headers = ['笔记id', '笔记url', '评论id', '用户id', '用户主页url', '昵称', '头像url', '评论内容', '评论标签', '点赞数量', '上传时间', 'ip归属地', '图片地址url列表']
-    ws.append(headers)
-    for data in datas:
-        data = {k: norm_text(str(v)) for k, v in data.items()}
-        ws.append(list(data.values()))
-    wb.save(file_path)
-    logger.info(f'数据保存至 {file_path}')
+    """
+    禁用 xlsx 导出：只记录提示，不写入文件。
+    """
+    logger.info(f'已跳过 xlsx 导出（仅生成 JSON），原路径: {file_path}')
+    return file_path
 
 def download_media(path, name, url, type):
     if type == 'image':
@@ -237,7 +253,7 @@ def save_note_detail(note, path):
         f.write(f"收藏数量: {note['collected_count']}\n")
         f.write(f"评论数量: {note['comment_count']}\n")
         f.write(f"分享数量: {note['share_count']}\n")
-        f.write(f"视频封面url: {note['video_cover']}\n")
+        f.write(f"视频时长: {note.get('video_duration')}\n")
         f.write(f"视频地址url: {note['video_addr']}\n")
         f.write(f"图片地址url列表: {note['image_list']}\n")
         f.write(f"标签: {note['tags']}\n")
@@ -266,7 +282,7 @@ def download_note(note_info, path, save_choice):
         for img_index, img_url in enumerate(note_info['image_list']):
             download_media(save_path, f'image_{img_index}', img_url, 'image')
     elif note_type == '视频' and save_choice in ['media', 'media-video', 'all']:
-        download_media(save_path, 'cover', note_info['video_cover'], 'image')
+        # 只下载视频本身，不再下载封面
         download_media(save_path, 'video', note_info['video_addr'], 'video')
     return save_path
 

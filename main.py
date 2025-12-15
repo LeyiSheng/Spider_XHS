@@ -14,6 +14,9 @@ class Data_Spider():
     def __init__(self):
         self.xhs_apis = XHS_Apis()
         self._limiter = AdaptiveLimiter()
+        # Track comment crawl failures to optionally halt the run
+        self.comment_fail_total = 0
+        self.comment_fail_stop = 10
 
     def spider_note(self, note_url: str, cookies_str: str, proxies=None):
         """
@@ -59,6 +62,7 @@ class Data_Spider():
         note_list = []
         all_comments = []
         merged_items = []  # 用于最终合并为一个JSON：每条笔记 + 其评论
+        comment_failures = 0
         # 仅当 fetch_comments=True 且保存选项需要评论时才爬取评论
         want_comments = fetch_comments and ((save_choice == 'all') or ('comments' in save_choice) or (save_choice == 'excel'))
 
@@ -91,6 +95,10 @@ class Data_Spider():
                     print(f"该笔记无可用评论或未返回评论: {note_url}")
                 else:
                     print(f"评论获取失败: {note_url}，原因: {cmsg}")
+                    comment_failures += 1
+                    self.comment_fail_total += 1
+                    if self.comment_fail_total > self.comment_fail_stop:
+                        raise RuntimeError(f'评论抓取失败次数超过 {self.comment_fail_stop} 次，已停止。')
                 # 如果需要下载媒体，优先下载并在此过程中写入视频统计信息
                 save_dir = None
                 if (save_choice == 'all') or ('media' in save_choice):
@@ -152,7 +160,7 @@ class Data_Spider():
                 logger.info(f'合并JSON已保存至 {merged_path}')
         except Exception as e:
             logger.warning(f'保存合并JSON失败: {e}')
-        return merged_path
+        return merged_path, comment_failures
 
     def spider_note_comments(self, note_url: str, cookies_str: str, proxies=None):
         """
@@ -231,6 +239,7 @@ class Data_Spider():
         """
         note_list = []
         merged_path = None
+        comment_failures = 0
         try:
             success, msg, notes = self.xhs_apis.search_some_note(query, require_num, cookies_str, sort_type_choice, note_type, note_time, note_range, pos_distance, geo, proxies)
             if success:
@@ -241,12 +250,15 @@ class Data_Spider():
                     note_list.append(note_url)
             if save_choice == 'all' or save_choice == 'excel':
                 excel_name = query
-            merged_path = self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, proxies)
+            merged_path, comment_failures = self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, proxies)
+        except RuntimeError:
+            # 让上层感知到评论失败次数过多的终止信号
+            raise
         except Exception as e:
             success = False
             msg = e
         logger.info(f'搜索关键词 {query} 笔记: {success}, msg: {msg}')
-        return note_list, success, msg, merged_path
+        return note_list, success, msg, merged_path, comment_failures
 
     def fill_comments_for_merged_json(self, merged_json_path: str, cookies_str: str, proxies=None):
         """
@@ -388,7 +400,7 @@ if __name__ == '__main__':
     notes = [
         r'https://www.xiaohongshu.com/explore/690f1db300000000070179fd?xsec_token=AB051BgS9kf17q9XewaTRcCGVcq2aYRQzYLULoNxlZ93I=&xsec_source=pc_feed',
     ]
-    path = data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
+    path, _ = data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
     print(f'爬取完成，数据保存至: {path}')
 
     # fillcomments 测试：先生成一个不包含评论的合并JSON，再调用填充方法补齐评论
@@ -398,7 +410,7 @@ if __name__ == '__main__':
         try:
             # 使用相同的 notes，生成不带评论的合并 JSON（comments 将为空数组）
             test_excel_name = 'filltest'
-            empty_comments_path = data_spider.spider_some_note(
+            empty_comments_path, _ = data_spider.spider_some_note(
                 notes,
                 cookies_str,
                 base_path,
