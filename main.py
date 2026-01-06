@@ -398,7 +398,35 @@ if __name__ == '__main__':
 
     # 1 爬取列表的所有笔记信息 笔记链接 如下所示 注意此url会过期！
     notes = [
-        r'https://www.xiaohongshu.com/explore/690f1db300000000070179fd?xsec_token=AB051BgS9kf17q9XewaTRcCGVcq2aYRQzYLULoNxlZ93I=&xsec_source=pc_feed',
+        r"https://www.xiaohongshu.com/explore/69392201000000001e02ba1f?xsec_token=ABojnLbzRCp9DrmhFKVlIZLO4gSbzserAEZWtMrCPy-oY=",
+        r"https://www.xiaohongshu.com/explore/695360b3000000002103d660?xsec_token=ABVAU9ncw1ZOIvUZre4T2Xlsjd1auMj0ZPzBHdKfQWB-Q=",
+r"https://www.xiaohongshu.com/explore/694b6dd5000000001d03a30d?xsec_token=AB35UyCX19KPn-jPquY8Zp9kmp6Ohrx8kZMhVopj43zxE=",
+r"https://www.xiaohongshu.com/explore/6950beb50000000022009c19?xsec_token=ABKS-vjF29SnLixiJUtgRwd8UQHLstNI13TMU803TWvUU=",
+r"https://www.xiaohongshu.com/explore/6954978b000000001e003433?xsec_token=AByRlAyIcXYIfP4tkv2XLApXrUSP25G_sRlB6EJHky2ek=",
+r"https://www.xiaohongshu.com/explore/69572ef9000000001e02d2bf?xsec_token=ABENuNbDESSek4tO3nIp4qks2BNERp5FITeXQBZsytpQg=",
+r"https://www.xiaohongshu.com/explore/69494757000000001e0282b2?xsec_token=ABZozgxmx0ti5NfnxK9HAQUwGfVFgI7RinXO9odayjKaE=",
+r"https://www.xiaohongshu.com/explore/69512447000000001e01036a?xsec_token=AByS9QUNMicecKs4FLBpfpowPwIyp9CBE_5nbqoKTWnHE=",
+r"https://www.xiaohongshu.com/explore/6953d556000000001e029af4?xsec_token=ABVAU9ncw1ZOIvUZre4T2Xlk40Vt7PVif0cVlLQNWSL_A=",
+r"https://www.xiaohongshu.com/explore/6945613d000000001d03d724?xsec_token=AB4eNbxg60_L4gMJQJLq3GOBRvFQP9hSPvqTOUbmSJYD0=",
+r"https://www.xiaohongshu.com/explore/693e91cd000000001d039311?xsec_token=ABPoJSVI63lTE8sPnGPRsWxt6_D9zb8dGFL1D1Lgz3GMk=",
+r"https://www.xiaohongshu.com/explore/693c3a980000000019024d05?xsec_token=ABl5f6M6BMHy9Yj34L7kmOZ_YhTe8lVpjItY_b3unG8EE=",
+r"https://www.xiaohongshu.com/explore/6957b139000000001f00cd1e?xsec_token=ABENuNbDESSek4tO3nIp4qktzq5CDhR2xQJiYKbuECcOM=",
+r"https://www.xiaohongshu.com/explore/694e96bb000000001f005759?xsec_token=AB2UTwJcNJyn-lgVUq-TPExOW-XICEQk09W6z9bKx2m14=",
+r"https://www.xiaohongshu.com/explore/69579b6b000000002102963d?xsec_token=ABENuNbDESSek4tO3nIp4qkmvi6MprFu7ikLDzcvzVv88=",
+r"https://www.xiaohongshu.com/explore/6954f1b0000000001e03a0d1?xsec_token=AByRlAyIcXYIfP4tkv2XLApbDkmuVxMEDc3rzvLuX8H_Y=",
+r"https://www.xiaohongshu.com/explore/694b7565000000001e012ee7?xsec_token=AB35UyCX19KPn-jPquY8Zp9lnIByAnfkhe5s2zdfUT4h0=",
+r"https://www.xiaohongshu.com/explore/694000c9000000001e0096eb?xsec_token=ABBoX8eCJqs2ZkZd9KBr8LMZ2LEJi2sLXnka4Tz2WfvIs=",
+r"https://www.xiaohongshu.com/explore/6957b4d5000000001e02fae8?xsec_token=ABENuNbDESSek4tO3nIp4qkggm6fpLsfCW1Ds80rVXFBU=",
+r"https://www.xiaohongshu.com/explore/6956da42000000001f00da91?xsec_token=ABcflCG4TzVSCv0wb5CaoRlxllzizGtWFlQdrnVfk3BHA=",
+r"https://www.xiaohongshu.com/explore/69492d6e000000001e02efc3?xsec_token=ABZozgxmx0ti5NfnxK9HAQU5ICPjTBF3gHeauPMRUhdhM=",
+r"https://www.xiaohongshu.com/explore/6946014d000000001e0387e2?xsec_token=ABRi-pq0n1Z8KobY5dvTdABujuzYPbrh8B9gl-L2o6KZU=",
+r"https://www.xiaohongshu.com/explore/6947bc85000000001e02cbe7?xsec_token=ABFBg4Oz-YlDRfrBF_fSk1s618zXjlCsoCwIoAIY_sgNQ=",
+r"https://www.xiaohongshu.com/explore/69456e42000000001f008973?xsec_token=AB4eNbxg60_L4gMJQJLq3GOOAAakb3MuRaFlIAvL1yXic=",
+r"https://www.xiaohongshu.com/explore/694a7205000000001e007a87?xsec_token=ABr3u2zGOmJzXPK-6s1c3To50_25eH_RuiM7gs3PjmjQE=",
+r"https://www.xiaohongshu.com/explore/6932e330000000000d03f1aa?xsec_token=ABeq3erdN0-J3IKBLg9Hyc5KJA8Xz1VEVVD-PH2TRuoco=",
+r"https://www.xiaohongshu.com/explore/68fba15700000000070360d8?xsec_token=ABhxzCB_TQu99V8jrqpgda9zwIPmHiop0mLR4yRbAnLWc=",
+r"https://www.xiaohongshu.com/explore/69536ab4000000001e025315?xsec_token=ABVAU9ncw1ZOIvUZre4T2XljEFAoQBflABtu5tBgphYqQ=",
+r"https://www.xiaohongshu.com/explore/6956839e000000001e02b525?xsec_token=ABcflCG4TzVSCv0wb5CaoRl2qpTONmPZYdZqF3VGXniuc="
     ]
     path, _ = data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
     print(f'爬取完成，数据保存至: {path}')
