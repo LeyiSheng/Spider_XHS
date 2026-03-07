@@ -119,7 +119,13 @@ class XHS_Apis():
             }
             splice_api = splice_str(api, params)
             headers, cookies, data = generate_request_params(cookies_str, splice_api, '', 'GET')
-            response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=proxies)
+            response = requests.get(
+                self.base_url + splice_api,
+                headers=headers,
+                cookies=cookies,
+                proxies=proxies,
+                timeout=15
+            )
             res_json = response.json()
             success, msg = res_json["success"], res_json["msg"]
         except Exception as e:
@@ -185,7 +191,13 @@ class XHS_Apis():
             }
             splice_api = splice_str(api, params)
             headers, cookies, data = generate_request_params(cookies_str, splice_api, '', 'GET')
-            response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=proxies)
+            response = requests.get(
+                self.base_url + splice_api,
+                headers=headers,
+                cookies=cookies,
+                proxies=proxies,
+                timeout=15
+            )
             res_json = response.json()
             success, msg = res_json["success"], res_json["msg"]
         except Exception as e:
@@ -635,7 +647,13 @@ class XHS_Apis():
             }
             splice_api = splice_str(api, params)
             headers, cookies, data = generate_request_params(cookies_str, splice_api, '', 'GET')
-            response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=proxies)
+            response = requests.get(
+                self.base_url + splice_api,
+                headers=headers,
+                cookies=cookies,
+                proxies=proxies,
+                timeout=15
+            )
             res_json = response.json()
             success, msg = res_json["success"], res_json["msg"]
         except Exception as e:
@@ -662,15 +680,21 @@ class XHS_Apis():
                 ]
                 return any(k in s for k in keywords)
 
+            rate_limit_retry = 0
+            max_rate_limit_retry = 3  # 避免频次限制时无限等待
             while True:
                 success, msg, res_json = self.get_note_out_comment(note_id, cursor, xsec_token, cookies_str, proxies)
                 if not success:
                     # 命中频次限制或风控时，冷却后重试本页
                     if _is_rate_limited(msg):
+                        rate_limit_retry += 1
+                        if rate_limit_retry > max_rate_limit_retry:
+                            raise Exception(f'一级评论频次限制重试超过 {max_rate_limit_retry} 次，放弃该笔记')
                         logger.warning('一级评论命中频次限制/风控，冷却一会儿再试...')
                         time.sleep(random.uniform(45, 90))
                         continue
                     raise Exception(msg)
+                rate_limit_retry = 0  # 成功后重置计数
                 comments = res_json["data"]["comments"]
                 if 'cursor' in res_json["data"]:
                     cursor = str(res_json["data"]["cursor"])
@@ -709,7 +733,13 @@ class XHS_Apis():
             }
             splice_api = splice_str(api, params)
             headers, cookies, data = generate_request_params(cookies_str, splice_api, '', 'GET')
-            response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=proxies)
+            response = requests.get(
+                self.base_url + splice_api,
+                headers=headers,
+                cookies=cookies,
+                proxies=proxies,
+                timeout=15
+            )
             res_json = response.json()
             success, msg = res_json["success"], res_json["msg"]
         except Exception as e:
@@ -739,15 +769,21 @@ class XHS_Apis():
 
             cursor = comment['sub_comment_cursor']
             inner_comment_list = []
+            rate_limit_retry = 0
+            max_rate_limit_retry = 3  # 避免频次限制时无限等待
             while True:
                 success, msg, res_json = self.get_note_inner_comment(comment, cursor, xsec_token, cookies_str, proxies)
                 if not success:
                     # 命中频次限制/风控时，冷却后重试本页
                     if _is_rate_limited(msg):
+                        rate_limit_retry += 1
+                        if rate_limit_retry > max_rate_limit_retry:
+                            raise Exception(f'二级评论频次限制重试超过 {max_rate_limit_retry} 次，放弃该笔记')
                         logger.warning('二级评论命中频次限制/风控，冷却一会儿再试...')
                         time.sleep(random.uniform(45, 90))
                         continue
                     raise Exception(msg)
+                rate_limit_retry = 0  # 成功后重置计数
                 comments = res_json["data"]["comments"]
                 if 'cursor' in res_json["data"]:
                     cursor = str(res_json["data"]["cursor"])
@@ -1053,6 +1089,4 @@ if __name__ == '__main__':
     note_url = r'https://www.xiaohongshu.com/explore/67d7c713000000000900e391?xsec_token=AB1ACxbo5cevHxV_bWibTmK8R1DDz0NnAW1PbFZLABXtE=&xsec_source=pc_user'
     success, msg, note_all_comment = xhs_apis.get_note_all_comment(note_url, cookies_str)
     logger.info(f'获取笔记评论结果 {json.dumps(note_all_comment, ensure_ascii=False)}: {success}, msg: {msg}')
-
-
 
