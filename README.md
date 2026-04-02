@@ -58,9 +58,9 @@ python main.py
 ## 🍔 交流群
 如果你对爬虫和ai agent感兴趣，请加作者主页wx通过邀请加入群聊
 
-ps: 群聊已超过wx限制人数，只能通过邀请加入群聊，主页有wx
+ps: 群1、2已超过wx限制人数500，请加群3
 
-<img width="411" height="612" alt="image" src="https://github.com/user-attachments/assets/ad6f133a-e6d1-4d53-bbd2-2b1a9c88cedf" />
+![06f69d67ff814b84e122bb32d123075b](https://github.com/user-attachments/assets/411eb15e-ea02-44e3-ae53-ff8f21d3f460)
 
 
 
